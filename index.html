@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Optical Transfer Hub - Perfect Final</title>
+    <title>Optical Transfer Hub - Hex Patch Final</title>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     
@@ -87,7 +87,7 @@
 </head>
 <body>
 
-    <h2>OPTICAL HUB PERFECT</h2>
+    <h2>OPTICAL HUB HEX PATCH</h2>
 
     <!-- Main Menu -->
     <div id="main-menu" class="container active-container">
@@ -121,7 +121,7 @@
             <input type="file" id="fileInput">
             
             <label>FPS Speed:</label>
-            <input type="number" id="fpsInput" value="10" min="1" max="60">
+            <input type="number" id="fpsInput" value="8" min="1" max="60">
         </div>
         
         <button id="startGenBtn">Start Broadcast</button>
@@ -212,7 +212,7 @@
                     let total = parseInt(parts[1]);
                     let index = parseInt(parts[2]);
                     let origSize = parseInt(parts[3]);
-                    let b64Chunk = parts.slice(4).join('|');
+                    let hexChunk = parts.slice(4).join('|');
                     
                     if (totalExpected === 0) { 
                         totalExpected = total; 
@@ -222,11 +222,12 @@
                     
                     if (!receivedChunkBytes[index]) {
                         try {
-                            let binaryString = atob(b64Chunk);
-                            let len = binaryString.length;
-                            let bytes = new Uint8Array(len);
-                            for (let i = 0; i < len; i++) {
-                                bytes[i] = binaryString.charCodeAt(i);
+                            // Hex string ko wapas Uint8Array bytes mein convert karna (100% safe from corruption)
+                            let bytePairs = hexChunk.match(/.{1,2}/g);
+                            if (!bytePairs) return;
+                            let bytes = new Uint8Array(bytePairs.length);
+                            for (let i = 0; i < bytePairs.length; i++) {
+                                bytes[i] = parseInt(bytePairs[i], 16);
                             }
                             
                             receivedChunkBytes[index] = bytes;
@@ -309,7 +310,7 @@
 
             function startGenerating() {
                 const fileInput = document.getElementById('fileInput').files[0];
-                const fps = parseInt(document.getElementById('fpsInput').value) || 10;
+                const fps = parseInt(document.getElementById('fpsInput').value) || 8;
                 if (!fileInput) return alert("Select a file first.");
                 
                 const reader = new FileReader();
@@ -320,16 +321,15 @@
                     const bytes = new Uint8Array(arrayBuffer);
                     const originalSize = bytes.length;
                     
-                    const BYTES_PER_CHUNK = 120; 
+                    // Har chunk ko 80 bytes rakha hai taake Hex encoding ke sath bhi QR code asani se scan ho sakay
+                    const BYTES_PER_CHUNK = 80; 
                     const qrChunks = [];
                     
                     for (let i = 0; i < originalSize; i += BYTES_PER_CHUNK) {
                         let slice = bytes.subarray(i, i + BYTES_PER_CHUNK);
-                        let binary = "";
-                        for (let b = 0; b < slice.length; b++) {
-                            binary += String.fromCharCode(slice[b]);
-                        }
-                        qrChunks.push(btoa(binary));
+                        // Raw bytes ko Hex string mein badલنا (No Base64 corruption issue)
+                        let hexString = Array.from(slice).map(b => b.toString(16).padStart(2, '0')).join('');
+                        qrChunks.push(hexString);
                     }
                     
                     const qrDisp = document.getElementById('qr-display');
