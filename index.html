@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Optical Transfer Hub</title>
+    <title>Optical Transfer Hub - Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     
@@ -54,6 +54,7 @@
             border-radius: 10px;
             overflow: hidden;
             margin-top: 15px;
+            display: none;
         }
         video { width: 100%; display: block; }
         
@@ -86,20 +87,20 @@
 </head>
 <body>
 
-    <h2>OPTICAL HUB</h2>
+    <h2>OPTICAL HUB PRO</h2>
 
     <!-- Main Menu -->
     <div id="main-menu" class="container active-container">
-        <button onclick="showScreen('receive-screen')">📥 Receive File (Scan QR)</button>
-        <button onclick="showScreen('send-screen')">📤 Send File (Broadcast QR)</button>
+        <button id="btnToReceive">📥 Receive File (Scan QR)</button>
+        <button id="btnToSend">📤 Send File (Broadcast QR)</button>
     </div>
 
     <!-- RECEIVE SCREEN -->
     <div id="receive-screen" class="container">
-        <button class="back-btn" onclick="showScreen('main-menu'); stopScanner();">← Back</button>
-        <button id="startScanBtn" onclick="startScanner()">Start Camera</button>
+        <button class="back-btn" id="btnBackFromReceive">← Back</button>
+        <button id="startScanBtn">Start Camera</button>
         
-        <div id="video-container" style="display:none;">
+        <div id="video-container">
             <video id="camera" autoplay playsinline></video>
         </div>
         
@@ -113,7 +114,7 @@
 
     <!-- SEND SCREEN -->
     <div id="send-screen" class="container">
-        <button class="back-btn" onclick="showScreen('main-menu'); stopGenerating();">← Back</button>
+        <button class="back-btn" id="btnBackFromSend">← Back</button>
         
         <div class="settings-box">
             <label>Select File:</label>
@@ -123,175 +124,231 @@
             <input type="number" id="fpsInput" value="15" min="1" max="90">
         </div>
         
-        <button id="startGenBtn" onclick="startGenerating()">Start Broadcast</button>
+        <button id="startGenBtn">Start Broadcast</button>
         
         <div id="gen-status" style="margin-top: 10px;"></div>
         <div id="qr-display"></div>
     </div>
 
     <script>
-        function showScreen(screenId) {
-            document.querySelectorAll('.container').forEach(el => el.classList.remove('active-container'));
-            document.getElementById(screenId).classList.add('active-container');
-        }
-
-        // --- RECEIVER LOGIC ---
-        let scanning = false;
-        let scanChunks = {};
-        let totalExpected = 0;
-        let scanReceivedCount = 0;
-        let scanFileName = "file";
-
-        const video = document.getElementById("camera");
-        const canvasElement = document.getElementById("canvas");
-        const canvas = canvasElement.getContext("2d");
-
-        function startScanner() {
-            document.getElementById('downloadAnchor').style.display = 'none';
-            
-            navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", frameRate: { ideal: 60 } } }).then(stream => {
-                scanning = true;
-                document.getElementById('video-container').style.display = 'block';
-                document.getElementById('startScanBtn').style.display = 'none';
-                video.srcObject = stream;
-                requestAnimationFrame(tick);
-            }).catch(() => alert("Camera access required!"));
-        }
-
-        function stopScanner() {
-            scanning = false;
-            if(video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
-            document.getElementById('video-container').style.display = 'none';
-            document.getElementById('startScanBtn').style.display = 'block';
-            scanChunks = {}; totalExpected = 0; scanReceivedCount = 0;
-            document.getElementById('scan-progress').style.width = "0%";
-            document.getElementById('scan-status').innerText = "Waiting...";
-        }
-
-        function tick() {
-            if (video.readyState === video.HAVE_ENOUGH_DATA && scanning) {
-                canvasElement.height = video.videoHeight;
-                canvasElement.width = video.videoWidth;
-                canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
-                let imgData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
-                let code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: "dontInvert" });
-
-                if (code) processScannedData(code.data);
+        document.addEventListener("DOMContentLoaded", () => {
+            function showScreen(screenId) {
+                document.querySelectorAll('.container').forEach(el => el.classList.remove('active-container'));
+                document.getElementById(screenId).classList.add('active-container');
             }
-            if (scanning) requestAnimationFrame(tick);
-        }
 
-        function processScannedData(data) {
-            let parts = data.split('|');
-            if (parts.length >= 4) {
-                let name = parts[0], total = parseInt(parts[1]), index = parseInt(parts[2]);
-                let b64 = parts.slice(3).join('|').trim();
+            document.getElementById('btnToReceive').addEventListener('click', () => showScreen('receive-screen'));
+            document.getElementById('btnToSend').addEventListener('click', () => showScreen('send-screen'));
+            
+            document.getElementById('btnBackFromReceive').addEventListener('click', () => {
+                showScreen('main-menu');
+                stopScanner();
+            });
+
+            document.getElementById('btnBackFromSend').addEventListener('click', () => {
+                showScreen('main-menu');
+                stopGenerating();
+            });
+
+            // --- RECEIVER LOGIC ---
+            let scanning = false;
+            let receivedChunkBytes = {};
+            let totalExpected = 0;
+            let scanReceivedCount = 0;
+            let scanFileName = "file";
+            let totalOriginalSize = 0;
+            let compiledBlobUrl = null;
+
+            const video = document.getElementById("camera");
+            const canvasElement = document.getElementById("canvas");
+            const canvas = canvasElement.getContext("2d");
+
+            document.getElementById('startScanBtn').addEventListener('click', startScanner);
+
+            function startScanner() {
+                document.getElementById('downloadAnchor').style.display = 'none';
                 
-                if (totalExpected === 0) { totalExpected = total; scanFileName = name; }
-                
-                if (!scanChunks[index]) {
-                    scanChunks[index] = b64;
-                    scanReceivedCount++;
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", frameRate: { ideal: 60 } } }).then(stream => {
+                    scanning = true;
+                    document.getElementById('video-container').style.display = 'block';
+                    document.getElementById('startScanBtn').style.display = 'none';
+                    video.srcObject = stream;
+                    requestAnimationFrame(tick);
+                }).catch(err => alert("Camera access required: " + err.message));
+            }
+
+            function stopScanner() {
+                scanning = false;
+                if(video.srcObject) video.srcObject.getTracks().forEach(t => t.stop());
+                document.getElementById('video-container').style.display = 'none';
+                document.getElementById('startScanBtn').style.display = 'block';
+                receivedChunkBytes = {}; totalExpected = 0; scanReceivedCount = 0;
+                document.getElementById('scan-progress').style.width = "0%";
+                document.getElementById('scan-status').innerText = "Waiting...";
+            }
+
+            function tick() {
+                if (video.readyState === video.HAVE_ENOUGH_DATA && scanning) {
+                    canvasElement.height = video.videoHeight;
+                    canvasElement.width = video.videoWidth;
+                    canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
+                    let imgData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
+                    let code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: "dontInvert" });
+
+                    if (code) processScannedData(code.data);
+                }
+                if (scanning) requestAnimationFrame(tick);
+            }
+
+            function processScannedData(data) {
+                let parts = data.split('|');
+                if (parts.length >= 5) {
+                    let name = parts[0];
+                    let total = parseInt(parts[1]);
+                    let index = parseInt(parts[2]);
+                    let origSize = parseInt(parts[3]);
+                    let b64Chunk = parts.slice(4).join('|');
                     
-                    let pct = (scanReceivedCount / totalExpected) * 100;
-                    document.getElementById('scan-progress').style.width = pct + "%";
-                    document.getElementById('scan-status').innerText = `Received ${scanReceivedCount}/${totalExpected}`;
+                    if (totalExpected === 0) { 
+                        totalExpected = total; 
+                        scanFileName = name; 
+                        totalOriginalSize = origSize;
+                    }
+                    
+                    if (!receivedChunkBytes[index]) {
+                        try {
+                            let binaryString = atob(b64Chunk);
+                            let len = binaryString.length;
+                            let bytes = new Uint8Array(len);
+                            for (let i = 0; i < len; i++) {
+                                bytes[i] = binaryString.charCodeAt(i);
+                            }
+                            
+                            receivedChunkBytes[index] = bytes;
+                            scanReceivedCount++;
+                            
+                            let pct = (scanReceivedCount / totalExpected) * 100;
+                            document.getElementById('scan-progress').style.width = pct + "%";
+                            document.getElementById('scan-status').innerText = `Received ${scanReceivedCount}/${totalExpected}`;
 
-                    if (scanReceivedCount === totalExpected) {
-                        stopScanner();
-                        document.getElementById('scan-status').innerText = "File Reassembled Successfully!";
-                        prepareBypassDownload();
+                            if (scanReceivedCount === totalExpected) {
+                                stopScanner();
+                                document.getElementById('scan-status').innerText = "Reassembling binary data...";
+                                assembleFile();
+                            }
+                        } catch (e) {
+                            // Ignore corrupted frames from bad camera reads
+                        }
                     }
                 }
             }
-        }
 
-        function prepareBypassDownload() {
-            try {
-                let finalB64 = "";
-                for (let i = 0; i < totalExpected; i++) {
-                    finalB64 += scanChunks[i];
-                }
-                
-                finalB64 = finalB64.replace(/\s/g, '');
-
-                let ext = scanFileName.split('.').pop().toLowerCase();
-                let mimeType = "application/octet-stream";
-                
-                if (ext === "pdf") mimeType = "application/pdf";
-                else if (ext === "jpg" || ext === "jpeg") mimeType = "image/jpeg";
-                else if (ext === "png") mimeType = "image/png";
-                else if (ext === "txt") mimeType = "text/plain";
-                else if (ext === "zip") mimeType = "application/zip";
-                else if (ext === "py" || ext === "html" || ext === "js") mimeType = "text/plain";
-
-                const dataUri = `data:${mimeType};base64,${finalB64}`;
-                
-                const anchor = document.getElementById('downloadAnchor');
-                anchor.href = dataUri;
-                anchor.download = scanFileName;
-                anchor.style.display = 'block';
-                
-                document.getElementById('scan-status').innerText = "Tap the glowing button below to download!";
-                
-            } catch (err) {
-                alert("Error compiling file: " + err.message);
-            }
-        }
-
-        // --- SENDER LOGIC ---
-        let genInterval;
-        let qrObj = null;
-
-        function startGenerating() {
-            const fileInput = document.getElementById('fileInput').files[0];
-            const fps = parseInt(document.getElementById('fpsInput').value) || 15;
-            if (!fileInput) return alert("Select a file first.");
-            
-            const reader = new FileReader();
-            document.getElementById('gen-status').innerText = "Processing file...";
-            
-            reader.onload = function(e) {
-                const b64Full = e.target.result.split(',')[1];
-                const chunkSize = 500;
-                const chunks = [];
-                
-                for (let i = 0; i < b64Full.length; i += chunkSize) {
-                    let chunk = b64Full.substring(i, i + chunkSize);
-                    if (chunk.length < chunkSize) {
-                        chunk = chunk.padEnd(chunkSize, ' ');
+            function assembleFile() {
+                try {
+                    let totalLen = 0;
+                    for (let i = 0; i < totalExpected; i++) {
+                        totalLen += receivedChunkBytes[i].length;
                     }
-                    chunks.push(chunk);
-                }
-                
-                const qrDisp = document.getElementById('qr-display');
-                qrDisp.innerHTML = "";
-                qrDisp.style.display = 'block';
-                qrObj = new QRCode(qrDisp, { width: 280, height: 280, correctLevel: QRCode.CorrectLevel.L });
-                
-                let currentIndex = 0;
-                document.getElementById('startGenBtn').innerText = "Stop Broadcast";
-                document.getElementById('startGenBtn').onclick = stopGenerating;
+                    
+                    let combined = new Uint8Array(totalLen);
+                    let offset = 0;
+                    for (let i = 0; i < totalExpected; i++) {
+                        combined.set(receivedChunkBytes[i], offset);
+                        offset += receivedChunkBytes[i].length;
+                    }
+                    
+                    // Truncate precisely to original file size
+                    let finalBytes = combined.subarray(0, totalOriginalSize);
 
+                    let ext = scanFileName.split('.').pop().toLowerCase();
+                    let mimeType = "application/octet-stream";
+                    if (ext === "pdf") mimeType = "application/pdf";
+                    else if (ext === "jpg" || ext === "jpeg") mimeType = "image/jpeg";
+                    else if (ext === "png") mimeType = "image/png";
+                    else if (ext === "txt") mimeType = "text/plain";
+                    else if (ext === "zip") mimeType = "application/zip";
+
+                    const blob = new Blob([finalBytes], { type: mimeType });
+                    if (compiledBlobUrl) URL.revokeObjectURL(compiledBlobUrl);
+                    compiledBlobUrl = URL.createObjectURL(blob);
+                    
+                    const anchor = document.getElementById('downloadAnchor');
+                    anchor.href = compiledBlobUrl;
+                    anchor.download = scanFileName;
+                    anchor.style.display = 'block';
+                    
+                    document.getElementById('scan-status').innerText = "Ready! Tap the button below to save.";
+                } catch (err) {
+                    alert("Assembly failed: " + err.message);
+                }
+            }
+
+            // --- SENDER LOGIC ---
+            let genInterval;
+            let qrObj = null;
+
+            const startGenBtn = document.getElementById('startGenBtn');
+            startGenBtn.addEventListener('click', () => {
+                if (startGenBtn.innerText.includes("Stop")) {
+                    stopGenerating();
+                } else {
+                    startGenerating();
+                }
+            });
+
+            function startGenerating() {
+                const fileInput = document.getElementById('fileInput').files[0];
+                const fps = parseInt(document.getElementById('fpsInput').value) || 15;
+                if (!fileInput) return alert("Select a file first.");
+                
+                const reader = new FileReader();
+                document.getElementById('gen-status').innerText = "Processing file into binary chunks...";
+                
+                reader.onload = function(e) {
+                    const arrayBuffer = e.target.result;
+                    const bytes = new Uint8Array(arrayBuffer);
+                    const originalSize = bytes.length;
+                    
+                    const BYTES_PER_CHUNK = 375; // Exactly fits standard QR density
+                    const qrChunks = [];
+                    
+                    for (let i = 0; i < originalSize; i += BYTES_PER_CHUNK) {
+                        let slice = bytes.subarray(i, i + BYTES_PER_CHUNK);
+                        let binary = "";
+                        for (let b = 0; b < slice.length; b++) {
+                            binary += String.fromCharCode(slice[b]);
+                        }
+                        qrChunks.push(btoa(binary));
+                    }
+                    
+                    const qrDisp = document.getElementById('qr-display');
+                    qrDisp.innerHTML = "";
+                    qrDisp.style.display = 'block';
+                    qrObj = new QRCode(qrDisp, { width: 280, height: 280, correctLevel: QRCode.CorrectLevel.L });
+                    
+                    let currentIndex = 0;
+                    startGenBtn.innerText = "Stop Broadcast";
+
+                    clearInterval(genInterval);
+                    genInterval = setInterval(() => {
+                        // Payload format: filename|total|index|originalSize|base64_chunk
+                        let payload = `${fileInput.name}|${qrChunks.length}|${currentIndex}|${originalSize}|${qrChunks[currentIndex]}`;
+                        qrObj.clear();
+                        qrObj.makeCode(payload);
+                        document.getElementById('gen-status').innerText = `Broadcasting: Frame ${currentIndex + 1}/${qrChunks.length}`;
+                        currentIndex = (currentIndex + 1) % qrChunks.length;
+                    }, 1000 / fps);
+                };
+                reader.readAsArrayBuffer(fileInput);
+            }
+
+            function stopGenerating() {
                 clearInterval(genInterval);
-                genInterval = setInterval(() => {
-                    let payload = `${fileInput.name}|${chunks.length}|${currentIndex}|${chunks[currentIndex]}`;
-                    qrObj.clear();
-                    qrObj.makeCode(payload);
-                    document.getElementById('gen-status').innerText = `Broadcasting: Frame ${currentIndex + 1}/${chunks.length}`;
-                    currentIndex = (currentIndex + 1) % chunks.length;
-                }, 1000 / fps);
-            };
-            reader.readAsDataURL(fileInput);
-        }
-
-        function stopGenerating() {
-            clearInterval(genInterval);
-            document.getElementById('qr-display').style.display = 'none';
-            document.getElementById('gen-status').innerText = "Broadcast stopped.";
-            document.getElementById('startGenBtn').innerText = "Start Broadcast";
-            document.getElementById('startGenBtn').onclick = startGenerating;
-        }
+                document.getElementById('qr-display').style.display = 'none';
+                document.getElementById('gen-status').innerText = "Broadcast stopped.";
+                startGenBtn.innerText = "Start Broadcast";
+            }
+        });
     </script>
 </body>
 </html>
