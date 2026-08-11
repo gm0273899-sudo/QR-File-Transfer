@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Optical Transfer Hub - Final</title>
+    <title>Optical Transfer Hub - Perfect Final</title>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     
@@ -59,7 +59,7 @@
         video { width: 100%; display: block; }
         
         .progress-bar {
-            width: 100%; background-color: #333; height: 20px; margin-top: 15px; border-radius: 5px;
+            width: 100%; background-color: #333; height: 20px; margin-top: 15px; border-radius: 5px; overflow: hidden;
         }
         .progress-fill {
             height: 100%; background-color: #00ffcc; width: 0%; border-radius: 5px; transition: width 0.1s;
@@ -87,7 +87,7 @@
 </head>
 <body>
 
-    <h2>OPTICAL HUB FINAL</h2>
+    <h2>OPTICAL HUB PERFECT</h2>
 
     <!-- Main Menu -->
     <div id="main-menu" class="container active-container">
@@ -196,7 +196,6 @@
                     canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
                     let imgData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
                     
-                    // attemptBoth use kiya hai taake camera har angle aur inversion se fورا讀 le
                     let code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: "attemptBoth" });
 
                     if (code) {
@@ -231,15 +230,15 @@
                             }
                             
                             receivedChunkBytes[index] = bytes;
-                            scanReceivedCount++;
+                            scanReceivedCount = Object.keys(receivedChunkBytes).length;
                             
                             let pct = (scanReceivedCount / totalExpected) * 100;
                             document.getElementById('scan-progress').style.width = pct + "%";
-                            document.getElementById('scan-status').innerText = `Received ${scanReceivedCount}/${totalExpected}`;
+                            document.getElementById('scan-status').innerText = `Received ${scanReceivedCount}/${totalExpected} chunks`;
 
                             if (scanReceivedCount === totalExpected) {
                                 stopScanner();
-                                document.getElementById('scan-status').innerText = "Reassembling binary data...";
+                                document.getElementById('scan-status').innerText = "All chunks received! Reassembling...";
                                 assembleFile();
                             }
                         } catch (e) {
@@ -251,6 +250,13 @@
 
             function assembleFile() {
                 try {
+                    for (let i = 0; i < totalExpected; i++) {
+                        if (!receivedChunkBytes[i]) {
+                            alert("Error: Missing chunk index " + i + ". Please restart transfer.");
+                            return;
+                        }
+                    }
+
                     let totalLen = 0;
                     for (let i = 0; i < totalExpected; i++) {
                         totalLen += receivedChunkBytes[i].length;
@@ -282,7 +288,7 @@
                     anchor.download = scanFileName;
                     anchor.style.display = 'block';
                     
-                    document.getElementById('scan-status').innerText = "Ready! Tap the button below to save.";
+                    document.getElementById('scan-status').innerText = "File successfully reassembled! Tap below to download.";
                 } catch (err) {
                     alert("Assembly failed: " + err.message);
                 }
@@ -314,7 +320,6 @@
                     const bytes = new Uint8Array(arrayBuffer);
                     const originalSize = bytes.length;
                     
-                    // Chunks ko chota rakha hai taake QR code asani se scan ho sakay
                     const BYTES_PER_CHUNK = 120; 
                     const qrChunks = [];
                     
