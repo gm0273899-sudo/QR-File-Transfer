@@ -69,6 +69,7 @@
         }
         .settings-box { border: 1px solid #333; padding: 15px; width: 100%; box-sizing: border-box; border-radius: 8px; }
         .back-btn { background-color: #ff0055; color: white; }
+        #downloadBtn { background-color: #00ffcc; color: #000; font-size: 18px; display: none; margin-top: 15px; }
     </style>
 </head>
 <body>
@@ -93,6 +94,9 @@
         <div id="scan-status" style="margin-top: 15px;">Waiting...</div>
         <div class="progress-bar"><div id="scan-progress" class="progress-fill"></div></div>
         
+        <!-- Manual Download Button to bypass mobile browser restrictions -->
+        <button id="downloadBtn" onclick="triggerDownload()">💾 Save Downloaded File</button>
+
         <canvas id="canvas" hidden></canvas>
     </div>
 
@@ -126,11 +130,14 @@
         let totalExpected = 0;
         let scanReceivedCount = 0;
         let scanFileName = "file";
+        let compiledBlobUrl = null;
+
         const video = document.getElementById("camera");
         const canvasElement = document.getElementById("canvas");
         const canvas = canvasElement.getContext("2d");
 
         function startScanner() {
+            document.getElementById('downloadBtn').style.display = 'none';
             navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", frameRate: { ideal: 60 } } }).then(stream => {
                 scanning = true;
                 document.getElementById('video-container').style.display = 'block';
@@ -167,7 +174,7 @@
             let parts = data.split('|');
             if (parts.length >= 4) {
                 let name = parts[0], total = parseInt(parts[1]), index = parseInt(parts[2]);
-                let b64 = parts.slice(3).join('|').trim(); // Trim padding spaces
+                let b64 = parts.slice(3).join('|').trim();
                 
                 if (totalExpected === 0) { totalExpected = total; scanFileName = name; }
                 
@@ -181,24 +188,22 @@
 
                     if (scanReceivedCount === totalExpected) {
                         stopScanner();
-                        document.getElementById('scan-status').innerText = "Reassembling File...";
-                        setTimeout(assembleAndDownload, 300);
+                        document.getElementById('scan-status').innerText = "File Received! Processing...";
+                        prepareDownload();
                     }
                 }
             }
         }
 
-        function assembleAndDownload() {
+        function prepareDownload() {
             try {
                 let finalB64 = "";
                 for (let i = 0; i < totalExpected; i++) {
                     finalB64 += scanChunks[i];
                 }
                 
-                // Clean Base64 String
                 finalB64 = finalB64.replace(/\s/g, '');
 
-                // Convert Base64 directly to ArrayBuffer and Blob (Fixes 0-byte download bug)
                 const byteCharacters = atob(finalB64);
                 const byteNumbers = new Array(byteCharacters.length);
                 for (let i = 0; i < byteCharacters.length; i++) {
@@ -207,16 +212,23 @@
                 const byteArray = new Uint8Array(byteNumbers);
                 const blob = new Blob([byteArray], { type: "application/octet-stream" });
 
+                compiledBlobUrl = URL.createObjectURL(blob);
+                
+                document.getElementById('scan-status').innerText = "Transfer Complete! Click below to save.";
+                document.getElementById('downloadBtn').style.display = 'block';
+            } catch (err) {
+                alert("Error decoding file: " + err.message);
+            }
+        }
+
+        function triggerDownload() {
+            if (compiledBlobUrl) {
                 const link = document.createElement('a');
-                link.href = URL.createObjectURL(blob);
+                link.href = compiledBlobUrl;
                 link.download = scanFileName;
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
-
-                document.getElementById('scan-status').innerText = "File Downloaded Successfully!";
-            } catch (err) {
-                alert("Error decoding file: " + err.message);
             }
         }
 
@@ -234,12 +246,11 @@
             
             reader.onload = function(e) {
                 const b64Full = e.target.result.split(',')[1];
-                const chunkSize = 500; // Safe chunk size
+                const chunkSize = 500;
                 const chunks = [];
                 
                 for (let i = 0; i < b64Full.length; i += chunkSize) {
                     let chunk = b64Full.substring(i, i + chunkSize);
-                    // Pad last chunk with spaces so QR matrix size remains CONSTANT
                     if (chunk.length < chunkSize) {
                         chunk = chunk.padEnd(chunkSize, ' ');
                     }
