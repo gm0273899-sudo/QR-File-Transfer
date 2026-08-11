@@ -74,7 +74,6 @@
         .settings-box { border: 1px solid #333; padding: 15px; width: 100%; box-sizing: border-box; border-radius: 8px; }
         .back-btn { background-color: #ff0055; color: white; }
         
-        /* The Ultimate Bypass Link style */
         #downloadAnchor {
             background-color: #ff00ff;
             color: #ffffff;
@@ -87,7 +86,7 @@
 </head>
 <body>
 
-    <h2>OPTICAL HUB (BYPASS)</h2>
+    <h2>OPTICAL HUB</h2>
 
     <!-- Main Menu -->
     <div id="main-menu" class="container active-container">
@@ -107,7 +106,6 @@
         <div id="scan-status" style="margin-top: 15px;">Waiting...</div>
         <div class="progress-bar"><div id="scan-progress" class="progress-fill"></div></div>
         
-        <!-- ULTIMATE BYPASS: Real HTML Anchor Tag styled as a glowing button -->
         <a id="downloadAnchor" class="direct-link" target="_blank">🚀 CLICK TO SAVE FILE NOW</a>
 
         <canvas id="canvas" hidden></canvas>
@@ -215,10 +213,8 @@
                     finalB64 += scanChunks[i];
                 }
                 
-                // Remove padding spaces
                 finalB64 = finalB64.replace(/\s/g, '');
 
-                // Detect extension & MIME type
                 let ext = scanFileName.split('.').pop().toLowerCase();
                 let mimeType = "application/octet-stream";
                 
@@ -229,13 +225,12 @@
                 else if (ext === "zip") mimeType = "application/zip";
                 else if (ext === "py" || ext === "html" || ext === "js") mimeType = "text/plain";
 
-                // Direct Data URI injection into the real Anchor Tag
                 const dataUri = `data:${mimeType};base64,${finalB64}`;
                 
                 const anchor = document.getElementById('downloadAnchor');
                 anchor.href = dataUri;
                 anchor.download = scanFileName;
-                anchor.style.display = 'block'; // Show the actual clickable link button
+                anchor.style.display = 'block';
                 
                 document.getElementById('scan-status').innerText = "Tap the glowing button below to download!";
                 
@@ -295,7 +290,7 @@
             document.getElementById('qr-display').style.display = 'none';
             document.getElementById('gen-status').innerText = "Broadcast stopped.";
             document.getElementById('startGenBtn').innerText = "Start Broadcast";
-            document.getElementById('startGenBtn'].onclick = startGenerating;
+            document.getElementById('startGenBtn').onclick = startGenerating;
         }
     </script>
 </body>
