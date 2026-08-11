@@ -31,7 +31,7 @@
         }
         .active-container { display: flex; }
 
-        button {
+        button, .direct-link {
             background-color: #00ffcc;
             color: #000;
             border: none;
@@ -42,6 +42,10 @@
             cursor: pointer;
             margin: 10px 0;
             width: 100%;
+            text-align: center;
+            text-decoration: none;
+            box-sizing: border-box;
+            display: block;
         }
         
         #video-container {
@@ -70,13 +74,20 @@
         .settings-box { border: 1px solid #333; padding: 15px; width: 100%; box-sizing: border-box; border-radius: 8px; }
         .back-btn { background-color: #ff0055; color: white; }
         
-        .download-btn { background-color: #00ffcc; color: #000; font-size: 16px; display: none; margin-top: 10px; }
-        .fallback-btn { background-color: #ffcc00; color: #000; font-size: 16px; display: none; margin-top: 10px; }
+        /* The Ultimate Bypass Link style */
+        #downloadAnchor {
+            background-color: #ff00ff;
+            color: #ffffff;
+            font-size: 18px;
+            display: none;
+            margin-top: 15px;
+            box-shadow: 0 0 15px rgba(255, 0, 255, 0.5);
+        }
     </style>
 </head>
 <body>
 
-    <h2>OPTICAL HUB</h2>
+    <h2>OPTICAL HUB (BYPASS)</h2>
 
     <!-- Main Menu -->
     <div id="main-menu" class="container active-container">
@@ -96,9 +107,8 @@
         <div id="scan-status" style="margin-top: 15px;">Waiting...</div>
         <div class="progress-bar"><div id="scan-progress" class="progress-fill"></div></div>
         
-        <!-- Two Download Options to bypass Android Bugs -->
-        <button id="downloadBtn" class="download-btn" onclick="triggerDownload()">💾 Save File (Standard)</button>
-        <button id="fallbackBtn" class="fallback-btn" onclick="triggerFallbackDownload()">⚠️ Save File (Fallback)</button>
+        <!-- ULTIMATE BYPASS: Real HTML Anchor Tag styled as a glowing button -->
+        <a id="downloadAnchor" class="direct-link" target="_blank">🚀 CLICK TO SAVE FILE NOW</a>
 
         <canvas id="canvas" hidden></canvas>
     </div>
@@ -133,16 +143,13 @@
         let totalExpected = 0;
         let scanReceivedCount = 0;
         let scanFileName = "file";
-        let compiledBlobUrl = null;
-        let fallbackDataUri = null;
 
         const video = document.getElementById("camera");
         const canvasElement = document.getElementById("canvas");
         const canvas = canvasElement.getContext("2d");
 
         function startScanner() {
-            document.getElementById('downloadBtn').style.display = 'none';
-            document.getElementById('fallbackBtn').style.display = 'none';
+            document.getElementById('downloadAnchor').style.display = 'none';
             
             navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", frameRate: { ideal: 60 } } }).then(stream => {
                 scanning = true;
@@ -194,76 +201,46 @@
 
                     if (scanReceivedCount === totalExpected) {
                         stopScanner();
-                        document.getElementById('scan-status').innerText = "File Received! Preparing download...";
-                        setTimeout(prepareDownload, 200); // 200ms delay to unfreeze UI
+                        document.getElementById('scan-status').innerText = "File Reassembled Successfully!";
+                        prepareBypassDownload();
                     }
                 }
             }
         }
 
-        function prepareDownload() {
+        function prepareBypassDownload() {
             try {
                 let finalB64 = "";
                 for (let i = 0; i < totalExpected; i++) {
                     finalB64 += scanChunks[i];
                 }
                 
-                // Remove any empty spaces used for padding
+                // Remove padding spaces
                 finalB64 = finalB64.replace(/\s/g, '');
 
-                // 1. Detect proper MIME type from filename extension
+                // Detect extension & MIME type
                 let ext = scanFileName.split('.').pop().toLowerCase();
-                let mimeType = "application/octet-stream"; // default
+                let mimeType = "application/octet-stream";
                 
                 if (ext === "pdf") mimeType = "application/pdf";
                 else if (ext === "jpg" || ext === "jpeg") mimeType = "image/jpeg";
                 else if (ext === "png") mimeType = "image/png";
                 else if (ext === "txt") mimeType = "text/plain";
-                else if (ext === "docx") mimeType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+                else if (ext === "zip") mimeType = "application/zip";
+                else if (ext === "py" || ext === "html" || ext === "js") mimeType = "text/plain";
 
-                // 2. Create standard Blob URL
-                const byteCharacters = atob(finalB64);
+                // Direct Data URI injection into the real Anchor Tag
+                const dataUri = `data:${mimeType};base64,${finalB64}`;
                 
-                // Memory efficient array conversion
-                const byteArray = new Uint8Array(byteCharacters.length);
-                for (let i = 0; i < byteCharacters.length; i++) {
-                    byteArray[i] = byteCharacters.charCodeAt(i);
-                }
+                const anchor = document.getElementById('downloadAnchor');
+                anchor.href = dataUri;
+                anchor.download = scanFileName;
+                anchor.style.display = 'block'; // Show the actual clickable link button
                 
-                const blob = new Blob([byteArray], { type: mimeType });
-                compiledBlobUrl = URL.createObjectURL(blob);
-                
-                // 3. Create Fallback Data URI (Direct base64 link)
-                fallbackDataUri = `data:${mimeType};base64,${finalB64}`;
-                
-                document.getElementById('scan-status').innerText = "Transfer Complete! Choose an option:";
-                document.getElementById('downloadBtn').style.display = 'block';
-                document.getElementById('fallbackBtn').style.display = 'block';
+                document.getElementById('scan-status').innerText = "Tap the glowing button below to download!";
                 
             } catch (err) {
-                alert("Error decoding file: " + err.message);
-            }
-        }
-
-        function triggerDownload() {
-            if (compiledBlobUrl) {
-                const link = document.createElement('a');
-                link.href = compiledBlobUrl;
-                link.download = scanFileName;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            }
-        }
-
-        function triggerFallbackDownload() {
-            if (fallbackDataUri) {
-                const link = document.createElement('a');
-                link.href = fallbackDataUri;
-                link.download = scanFileName;
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
+                alert("Error compiling file: " + err.message);
             }
         }
 
@@ -318,7 +295,7 @@
             document.getElementById('qr-display').style.display = 'none';
             document.getElementById('gen-status').innerText = "Broadcast stopped.";
             document.getElementById('startGenBtn').innerText = "Start Broadcast";
-            document.getElementById('startGenBtn').onclick = startGenerating;
+            document.getElementById('startGenBtn'].onclick = startGenerating;
         }
     </script>
 </body>
