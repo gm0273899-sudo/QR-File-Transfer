@@ -1,4 +1,300 @@
-import base64
+import base64import base64
+import os
+import threading
+import cv2
+import numpy as np
+from pyzbar.pyzbar import decode
+import qrcode
+import tkinter as tk
+from tkinter import filedialog, messagebox
+
+CHUNK_SIZE = 80
+
+
+class OpticalTransferApp:
+
+  def __init__(self, root):
+    self.root = root
+    self.root.title("Optical File Transfer - Fixed Hub")
+    self.root.geometry("450x380")
+    self.root.configure(bg="#121212")
+
+    title = tk.Label(
+        root,
+        text="OPTICAL TRANSFER HUB",
+        font=("Arial", 14, "bold"),
+        fg="#00ffcc",
+        bg="#121212",
+    )
+    title.pack(pady=15)
+
+    # File Selector Frame
+    file_frame = tk.Frame(root, bg="#121212")
+    file_frame.pack(fill="x", padx=20, pady=5)
+
+    self.selected_file_path = ""
+    self.file_label = tk.Label(
+        file_frame,
+        text="No file selected",
+        font=("Arial", 9),
+        fg="#888888",
+        bg="#121212",
+        anchor="w",
+    )
+    self.file_label.pack(side="left", fill="x", expand=True)
+
+    browse_btn = tk.Button(
+        file_frame,
+        text="Browse File",
+        command=self.browse_file,
+        bg="#333333",
+        fg="#ffffff",
+        font=("Arial", 9, "bold"),
+    )
+    browse_btn.pack(side="right", padx=5)
+
+    # FPS Frame
+    fps_frame = tk.Frame(root, bg="#121212")
+    fps_frame.pack(fill="x", padx=20, pady=10)
+
+    fps_label = tk.Label(
+        fps_frame,
+        text="FPS Speed (Frames/Sec):",
+        font=("Arial", 10),
+        fg="#ffffff",
+        bg="#121212",
+    )
+    fps_label.pack(side="left")
+
+    self.fps_entry = tk.Entry(fps_frame, width=8, font=("Arial", 10))
+    self.fps_entry.insert(0, "8")
+    self.fps_entry.pack(side="right")
+
+    # Action Buttons
+    self.send_btn = tk.Button(
+        root,
+        text="🚀 START BROADCAST (SEND)",
+        command=self.start_broadcast_thread,
+        bg="#00ffcc",
+        fg="#000000",
+        font=("Arial", 11, "bold"),
+        height=2,
+    )
+    self.send_btn.pack(fill="x", padx=20, pady=10)
+
+    self.recv_btn = tk.Button(
+        root,
+        text="📷 START RECEIVER (SCAN)",
+        command=self.start_receiver_thread,
+        bg="#ff0055",
+        fg="#ffffff",
+        font=("Arial", 11, "bold"),
+        height=2,
+    )
+    self.recv_btn.pack(fill="x", padx=20, pady=5)
+
+  def browse_file(self):
+    file_path = filedialog.askopenfilename()
+    if file_path:
+      self.selected_file_path = file_path
+      self.file_label.config(text=os.path.basename(file_path), fg="#00ffcc")
+
+  def start_broadcast_thread(self):
+    if not self.selected_file_path or not os.path.exists(
+        self.selected_file_path
+    ):
+      messagebox.showerror("Error", "Please select a file first!")
+      return
+    threading.Thread(target=self.run_broadcast, daemon=True).start()
+
+  def run_broadcast(self):
+    try:
+      fps = int(self.fps_entry.get())
+    except ValueError:
+      fps = 8
+
+    delay_ms = max(1, int(1000 / fps))
+    filename = os.path.basename(self.selected_file_path)
+
+    with open(self.selected_file_path, "rb") as f:
+      file_data = f.read()
+
+    original_size = len(file_data)
+
+    chunks = []
+    for i in range(0, original_size, CHUNK_SIZE):
+      slice_bytes = file_data[i : i + CHUNK_SIZE]
+      hex_str = "".join([format(b, "02x") for b in slice_bytes])
+      chunks.append(hex_str)
+
+    total_chunks = len(chunks)
+    index = 0
+
+    while True:
+      payload = f"{filename}|{total_chunks}|{index}|{original_size}|{chunks[index]}"
+
+      qr = qrcode.QRCode(
+          version=15,
+          error_correction=qrcode.constants.ERROR_CORRECT_L,
+          box_size=6,
+          border=2,
+      )
+      qr.add_data(payload)
+      qr.make(fit=True)
+
+      img = qr.make_image(fill_color="black", back_color="white")
+      img = np.array(img.convert("RGB"))
+      img = img[:, :, ::-1].copy()
+
+      img = cv2.resize(img, (500, 440), interpolation=cv2.INTER_NEAREST)
+
+      header_height = 60
+      h, w, _ = img.shape
+      canvas = np.ones((h + header_height, w, 3), dtype=np.uint8) * 255
+      canvas[header_height : header_height + h, 0:w] = img
+
+      cv2.putText(
+          canvas,
+          f"Frame: {index+1}/{total_chunks} | FPS: {fps}",
+          (15, 38),
+          cv2.FONT_HERSHEY_SIMPLEX,
+          0.6,
+          (0, 0, 255),
+          2,
+          cv2.LINE_AA,
+      )
+
+      cv2.imshow("Optical Broadcast Hub (Press 'q' to exit)", canvas)
+
+      key = cv2.waitKey(delay_ms) & 0xFF
+      if key == ord("q"):
+        break
+
+      if (
+          cv2.getWindowProperty(
+              "Optical Broadcast Hub (Press 'q' to exit)", cv2.WND_PROP_VISIBLE
+          )
+          < 1
+      ):
+        break
+
+      index = (index + 1) % total_chunks
+
+    cv2.destroyAllWindows()
+
+  def start_receiver_thread(self):
+    threading.Thread(target=self.run_receiver, daemon=True).start()
+
+  def run_receiver(self):
+    cap = cv2.VideoCapture(0)
+    if not cap.isOpened():
+      messagebox.showerror("Error", "Could not open webcam!")
+      return
+
+    cap.set(cv2.CAP_PROP_FPS, 60)
+
+    chunks_received = {}
+    total_expected = 0
+    target_filename = "received_file"
+    total_original_size = 0
+
+    while True:
+      ret, frame = cap.read()
+      if not ret:
+        break
+
+      try:
+        decoded_objects = decode(frame)
+      except Exception:
+        decoded_objects = []
+
+      for obj in decoded_objects:
+        try:
+          data = obj.data.decode("utf-8", errors="ignore")
+          parts = data.split("|")
+
+          if len(parts) >= 5:
+            filename = parts[0]
+            total = int(parts[1])
+            index = int(parts[2])
+            orig_size = int(parts[3])
+
+            hex_chunk = "|".join(parts[4:]).strip()
+
+            if total_expected == 0:
+              total_expected = total
+              target_filename = filename
+              total_original_size = orig_size
+
+            if index not in chunks_received:
+              byte_pairs = [
+                  hex_chunk[i : i + 2] for i in range(0, len(hex_chunk), 2)
+              ]
+              bytes_array = bytearray(
+                  [int(bp, 16) for bp in byte_pairs if len(bp) == 2]
+              )
+              chunks_received[index] = bytes_array
+        except Exception:
+          pass
+
+      received_count = len(chunks_received)
+      progress_text = f"Received: {received_count} / {total_expected if total_expected > 0 else '?'}"
+      cv2.putText(
+          frame,
+          progress_text,
+          (20, 40),
+          cv2.FONT_HERSHEY_SIMPLEX,
+          1,
+          (0, 255, 0),
+          2,
+      )
+      cv2.imshow("Optical Receiver Window (Press 'q' to cancel)", frame)
+
+      if total_expected > 0 and received_count == total_expected:
+        break
+
+      if cv2.waitKey(1) & 0xFF == ord("q"):
+        break
+
+      if (
+          cv2.getWindowProperty(
+              "Optical Receiver Window (Press 'q' to cancel)",
+              cv2.WND_PROP_VISIBLE,
+          )
+          < 1
+      ):
+        break
+
+    cap.release()
+    cv2.destroyAllWindows()
+
+    if total_expected > 0 and len(chunks_received) == total_expected:
+      try:
+        for i in range(total_expected):
+          if i not in chunks_received:
+            return
+
+        final_bytes = bytearray()
+        for i in range(total_expected):
+          final_bytes.extend(chunks_received[i])
+
+        final_bytes = final_bytes[:total_original_size]
+
+        with open(target_filename, "wb") as f:
+          f.write(final_bytes)
+
+        messagebox.showinfo(
+            "Success",
+            f"File successfully reassembled and saved as:\n{target_filename}",
+        )
+      except Exception as e:
+        messagebox.showerror("Error", f"Failed to reassemble file:\n{e}")
+
+
+if __name__ == "__main__":
+  root = tk.Tk()
+  app = OpticalTransferApp(root)
+  root.mainloop()
 import os
 import cv2
 import numpy as np
