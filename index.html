@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Optical Transfer Hub - Pro</title>
+    <title>Optical Transfer Hub - Final</title>
     <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
     
@@ -87,7 +87,7 @@
 </head>
 <body>
 
-    <h2>OPTICAL HUB PRO</h2>
+    <h2>OPTICAL HUB FINAL</h2>
 
     <!-- Main Menu -->
     <div id="main-menu" class="container active-container">
@@ -121,7 +121,7 @@
             <input type="file" id="fileInput">
             
             <label>FPS Speed:</label>
-            <input type="number" id="fpsInput" value="15" min="1" max="90">
+            <input type="number" id="fpsInput" value="10" min="1" max="60">
         </div>
         
         <button id="startGenBtn">Start Broadcast</button>
@@ -168,7 +168,9 @@
             function startScanner() {
                 document.getElementById('downloadAnchor').style.display = 'none';
                 
-                navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment", frameRate: { ideal: 60 } } }).then(stream => {
+                navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment", width: { ideal: 1280 }, height: { ideal: 720 } } 
+                }).then(stream => {
                     scanning = true;
                     document.getElementById('video-container').style.display = 'block';
                     document.getElementById('startScanBtn').style.display = 'none';
@@ -193,16 +195,20 @@
                     canvasElement.width = video.videoWidth;
                     canvas.drawImage(video, 0, 0, canvasElement.width, canvasElement.height);
                     let imgData = canvas.getImageData(0, 0, canvasElement.width, canvasElement.height);
-                    let code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: "dontInvert" });
+                    
+                    // attemptBoth use kiya hai taake camera har angle aur inversion se fورا讀 le
+                    let code = jsQR(imgData.data, imgData.width, imgData.height, { inversionAttempts: "attemptBoth" });
 
-                    if (code) processScannedData(code.data);
+                    if (code) {
+                        processScannedData(code.data);
+                    }
                 }
                 if (scanning) requestAnimationFrame(tick);
             }
 
             function processScannedData(data) {
                 let parts = data.split('|');
-                if (parts.length >= 5) {
+                if (parts.length >= 4) {
                     let name = parts[0];
                     let total = parseInt(parts[1]);
                     let index = parseInt(parts[2]);
@@ -237,7 +243,7 @@
                                 assembleFile();
                             }
                         } catch (e) {
-                            // Ignore corrupted frames from bad camera reads
+                            // Ignore corrupted frame reads
                         }
                     }
                 }
@@ -257,7 +263,6 @@
                         offset += receivedChunkBytes[i].length;
                     }
                     
-                    // Truncate precisely to original file size
                     let finalBytes = combined.subarray(0, totalOriginalSize);
 
                     let ext = scanFileName.split('.').pop().toLowerCase();
@@ -298,18 +303,19 @@
 
             function startGenerating() {
                 const fileInput = document.getElementById('fileInput').files[0];
-                const fps = parseInt(document.getElementById('fpsInput').value) || 15;
+                const fps = parseInt(document.getElementById('fpsInput').value) || 10;
                 if (!fileInput) return alert("Select a file first.");
                 
                 const reader = new FileReader();
-                document.getElementById('gen-status').innerText = "Processing file into binary chunks...";
+                document.getElementById('gen-status').innerText = "Processing file...";
                 
                 reader.onload = function(e) {
                     const arrayBuffer = e.target.result;
                     const bytes = new Uint8Array(arrayBuffer);
                     const originalSize = bytes.length;
                     
-                    const BYTES_PER_CHUNK = 375; // Exactly fits standard QR density
+                    // Chunks ko chota rakha hai taake QR code asani se scan ho sakay
+                    const BYTES_PER_CHUNK = 120; 
                     const qrChunks = [];
                     
                     for (let i = 0; i < originalSize; i += BYTES_PER_CHUNK) {
@@ -331,7 +337,6 @@
 
                     clearInterval(genInterval);
                     genInterval = setInterval(() => {
-                        // Payload format: filename|total|index|originalSize|base64_chunk
                         let payload = `${fileInput.name}|${qrChunks.length}|${currentIndex}|${originalSize}|${qrChunks[currentIndex]}`;
                         qrObj.clear();
                         qrObj.makeCode(payload);
